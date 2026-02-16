@@ -46,6 +46,32 @@ if [[ -z "$REPO" ]]; then
   }
 fi
 
+# ── Input validation ─────────────────────────────────────────────────
+if [[ ! "$REPO" =~ ^[a-zA-Z0-9._-]+/[a-zA-Z0-9._-]+$ ]]; then
+  echo "Error: Invalid repository format '$REPO'. Expected OWNER/REPO."
+  exit 1
+fi
+
+if [[ ! "$SOURCE" =~ ^[a-zA-Z0-9._-]+$ ]]; then
+  echo "Error: Invalid source environment name '$SOURCE'."
+  exit 1
+fi
+
+if [[ ! "$TARGET" =~ ^[a-zA-Z0-9._-]+$ ]]; then
+  echo "Error: Invalid target environment name '$TARGET'."
+  exit 1
+fi
+
+if [[ -n "$APPROVE_RUN" && ! "$APPROVE_RUN" =~ ^[0-9]+$ ]]; then
+  echo "Error: Invalid run ID '$APPROVE_RUN'. Must be numeric."
+  exit 1
+fi
+
+if [[ -n "$TRIGGER_WORKFLOW" && ! "$TRIGGER_WORKFLOW" =~ ^[a-zA-Z0-9._-]+$ ]]; then
+  echo "Error: Invalid workflow name '$TRIGGER_WORKFLOW'."
+  exit 1
+fi
+
 echo "Repository: $REPO"
 echo ""
 
@@ -90,15 +116,13 @@ if [[ -n "$APPROVE_RUN" ]]; then
 
   echo "Approving environments: $env_names"
 
-  gh api "/repos/${REPO}/actions/runs/${APPROVE_RUN}/pending_deployments" \
+  jq -n --argjson ids "$env_ids" '{
+    environment_ids: $ids,
+    state: "approved",
+    comment: "Approved via deploy-diff skill"
+  }' | gh api "/repos/${REPO}/actions/runs/${APPROVE_RUN}/pending_deployments" \
     --method POST \
-    --input - <<EOF
-{
-  "environment_ids": ${env_ids},
-  "state": "approved",
-  "comment": "Approved via deploy-diff skill"
-}
-EOF
+    --input -
 
   echo ""
   echo "Deployment approved."
@@ -131,13 +155,10 @@ if [[ -n "$TRIGGER_WORKFLOW" ]]; then
   echo "Using ref: $deploy_ref (from $SOURCE environment)"
   echo ""
 
-  gh api "/repos/${REPO}/actions/workflows/${TRIGGER_WORKFLOW}/dispatches" \
+  jq -n --arg ref "$deploy_ref" '{ref: $ref}' | \
+    gh api "/repos/${REPO}/actions/workflows/${TRIGGER_WORKFLOW}/dispatches" \
     --method POST \
-    --input - <<EOF
-{
-  "ref": "${deploy_ref}"
-}
-EOF
+    --input -
 
   echo "Workflow triggered."
   exit 0
